@@ -1,0 +1,147 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Consider the sampling of bivariate normal distribution given $Y_1 = \mu_1 + \sigma_1 Z$ and $Y_2 = \sigma_2(\rho Z_1 + \sqrt{1-\rho^2}Z_2)$ with $Z \in N(0,1)$.
+```{r}
+sampling <- function() {
+  mu_1 <- 0.08; sigma_1 <- 0.2; sigma_2 <- 0.01; rho <- 0.1;
+  res <- matrix(0,4)
+  Z_1 <- rnorm(1); Z_2 <- rnorm(1);
+  Y_1 <- mu_1 + sigma_1 * Z_1
+  Y_2 <- sigma_2 * (rho * Z_2 + sqrt(1-rho^2)*Z_2)
+  res[1] <- Y_1; res[2] <- Y_2;
+  res[3] <- Z_1; res[4] <- Z_2;
+  return(res)
+}
+```
+Calculating the value of the liability corresponds to
+```{r}
+liability <- function(delta=0) {
+  # Read in zero_rates
+  zero_rates <- read.csv("zero_rates.csv")
+  # Convert to vector
+  zero_rates <- zero_rates$x 
+  discount_factors <- matrix(0,length(zero_rates))
+  for (i in 1:length(zero_rates)){discount_factors[i] <- exp(-(zero_rates[i]+delta)*i)}
+  liability <- 100 * sum(discount_factors)
+  return(liability)
+}
+```
+Calculating the value of the bond portfolio is similiar
+```{r}
+bond_portfolio <- function(Y_2=0) {
+  # Read in zero_rates
+  zero_rates <- read.csv("zero_rates.csv"); zero_rates <- zero_rates$x;
+  # Read in bond_payments
+  bond_payments <- read.csv("bond_payments.csv"); bond_payments <- bond_payments$x 
+  temp <- matrix(0,length(zero_rates))
+  for (i in 1:length(zero_rates)) {
+    temp[i] <- bond_payments[i]*exp(-(zero_rates[i]+Y_2)*i)
+    }
+  bond_portfolio <- sum(temp)
+  return(bond_portfolio)
+}
+```
+Plot the value of the insurer’s portfolio, assets minus liabilities in one year from now
+```{r, out.width='1\\linewidth', fig.asp=0.3, fig.ncol = 1, fig.cap="output",fig.align = "center"}
+simulation <- function(num_simu) {
+  # Store
+  res <- matrix(0,num_simu, 5) # Y_1, Y_2 & V_1
+  # Simulation
+  for (i in 1:num_simu) {
+    sample <- sampling(); Y_1 <- sample[1]; Y_2 <- sample[2];
+    Z_1 <- sample[3]; Z_2 <- sample[4]
+    tot_invest <- 1.3 * liability(Y_2)
+    bond_invest <- 0.7 * tot_invest * bond_portfolio(Y_2)
+    stock_invest <- 0.3 * tot_invest * exp(Y_2)
+    res[i,5] <- bond_invest + stock_invest
+    res[i,1] <- Z_1;res[i,2] <- Z_2;
+    res[i,3] <- Y_1;res[i,4] <- Y_2;
+    colnames(res) <- c("Z_1", "Z_2", "Y_1", "Y_2", "V_1")
+  }
+  return(res)
+  
+}
+# Testing
+num_simu <- 1000
+res <- simulation(num_simu)
+Z_1 <- res[,1]; Z_2 <- res[,2]; 
+Y_1 <- res[,3]; Y_2 <- res[,4]; V_1 <- res[,5]
+par(mfrow=c(1,3))
+plot(Z_1, Z_2, cex = 0.3, col="black",
+     ylab = "Z_2", xlab= "Z_1", 
+     main = "Z")
+abline(h = 0, v = 0)
+plot(Y_1, Y_2, cex = 0.3, col="black",
+     ylab = "Y_2", xlab= "Y_1", 
+     main = "Y")
+abline(h = 0, v = 0)
+plot(V_1, cex = 0.3, col="black",
+     ylab = "Value" , xlab= "sample", 
+     main = "V")
+
+```
+Three dimensional plot
+```{r}
+library(ggplot2)
+library(plotly)
+matrix <- matrix(0,length(Z_1),3)
+matrix[,1] = Z_1
+matrix[,2] = Z_2
+matrix[,3] = V_1
+data <- data.frame(x=Z_1,y=Z_2,z=V_1)
+plot_ly() %>% 
+  add_trace(data = data,  x=data$x, y=data$y, z=data$z, type="mesh3d" ) %>% 
+  layout(title = 'Consequences for the V_1 because of Z_1 and Z_1', 
+         scene = list(xaxis = list(title = "Z_1"),  yaxis = list(title = "Z_2"), 
+                      zaxis = list(title = "V_1")))
+
+```
+
+Plot the value of the insurer’s portfolio, assets minus liabilities in one year from now, for all equally likely extreme scenarios.
+```{r}
+simulation <- function(num_simu) {
+  # Store
+  res <- matrix(0,num_simu, 3) # Y_1, Y_2 & V_1
+  # Simulation
+  i = 1
+  while(i < num_simu) {
+    sample <- sampling(); Y_1 <- sample[1]; Y_2 <- sample[2];
+    Z_1 <- sample[3]; Z_2 <- sample[4]
+    #print(sqrt(Z_1^2+Z_2^2))
+    if (all.equal(sqrt(Z_1^2+Z_2^2),3) == TRUE) {
+      print("test")
+      tot_invest <- 1.3 * liability(Y_2)
+      bond_invest <- 0.7 * tot_invest * bond_portfolio(Y_2)
+      stock_invest <- 0.3 * tot_invest * exp(Y_2)
+      res[i,3] <- bond_invest + stock_invest
+      res[i,1] <- Y_1;res[i,2] <- Y_2;
+      colnames(res) <- c("Y_1", "Y_2", "V_1")
+      i = i + 1
+    }
+  }
+  return(res)
+  
+}
+# Testing
+num_simu <- 10
+res <- simulation(num_simu)
+Y_1 <- res[,1]; Y_2 <- res[,2]; V_1 <- res[,3]
+par(mfrow=c(1,2))
+plot(Y_1, Y_2, cex = 0.3, col="black",
+     ylab = "Y_2", xlab= "Y_1", 
+     main = "Y_1")
+abline(h = 0, v = 0)
+plot(V_1, cex = 0.3, col="black",
+     ylab = "Value" , xlab= "sample", 
+     main = "Y_1")
+```
+
+Identify which scenario for Y1,Y2 that leads to the worst outcome for the value of the insurer’s assets mins liabilities in one year from now.
+```{r}
+
+```
+
+

@@ -1,0 +1,377 @@
+---
+title: "R Notebook"
+output:
+  html_notebook
+---
+Sources of this project is
+- http://www2.uaem.mx/r-mirror/web/packages/copula/copula.pdf
+- Enjoy the Joy of Copulas: With a Package copula
+- https://stats.stackexchange.com/questions/184849/simulate-a-gaussian-copula-with-t-margins
+Questions left:
+- How do we consider std?
+```{r}
+library(MASS)
+library(grid)
+```
+Two alternatives of sampling multivariate normal distribution 
+```{r}
+# Algorithm 3.2 in Quantitative Risk Managament
+multi_norm <- function(){
+  # Create matrix R
+  rho <- sin((pi/2)*0.4) 
+  num_of_z <- 50
+  R <- matrix(rho,num_of_z, num_of_z)
+  diag(R) <- 1
+  # Cholesky decomposition
+  chol_R <- t(chol(R))
+  # Generate standard normal variables
+  num_var <- dim(R)[1]
+  z <- rnorm(num_var)
+  # Multivariate normal distribution
+  x <- chol_R %*% z
+  return(x)
+}
+# https://www.rdocumentation.org/packages/MASS/versions/7.3-54/topics/mvrnorm
+faster_multi_norm <- function() {
+  # Create matrix R and vector mu
+  rho <- sin((pi/2)*0.4) 
+  num_of_z <- 50
+  R <- matrix(rho,num_of_z, num_of_z)
+  diag(R) <- 1
+  mu <- matrix(0,num_of_z)
+  # Sample
+  x <- mvrnorm(mu = mu, Sigma = R)
+  return(x)
+}
+```
+Sampling multivariate Student's t dist.
+```{r}
+multi_t <- function() {
+  # Create matrix R and vector mu
+  rho <- sin((pi/2)*0.4) 
+  num_of_z <- 50
+  R <- matrix(rho,num_of_z, num_of_z)
+  diag(R) <- 1
+  mu <- matrix(0,num_of_z)
+  # Consider example 9.4
+  d.f <- 4
+  # Normal dist.
+  Z = mvrnorm(mu = mu, Sigma = R) # Returns RZ, control this
+  # Chi dist.
+  W = sqrt(d.f/rchisq(num_of_z,d.f))
+  x <- mu + W  * Z
+  return(x)
+}
+```
+
+The copulas mentioned in the assignment and their sampling methods
+```{r}
+# Gaussian Copula
+gaussian <- function(num_simu) {
+  # Create a variable to store the res
+  num_of_z <- 50 # 50
+  res <- matrix(0,num_simu,num_of_z)
+  # Declare constants for t-dist.
+  std <- 0.01
+  d.f <- 3
+  for (i in 1:num_simu) {
+    # Fetch the samples x_1, ..., x_d from N(0,R)
+    x <- faster_multi_norm()
+    # Calculate the cdf of each x_1, ..., x_d
+    cdf_x <-pnorm(x)
+    # Calculate the quantile w.r.t to normal dist.
+    res[i,] <- std*qt(cdf_x,d.f)
+  }
+  return(res)
+}
+
+# t Copula
+t <- function(num_simu) {
+  # Create a variable to store the res
+  num_of_z <- 50
+  res <- matrix(0,num_simu,num_of_z)
+  # Declare constants for t-dist.
+  std <- 0.01
+  d.f_4 <- 4
+  d.f_3 <- 3
+  for (i in 1:num_simu) {
+    # Fetch the samples x_1, ..., x_d from N(0,R)
+    x <- multi_t()
+    # Calculate the cdf of each x_1, ..., x_d
+    cdf_x <-pt(x, d.f_4)
+    # Calculate the quantile w.r.t to normal dist.
+    res[i,] <- std*qt(cdf_x,d.f_3)
+  }
+  return(res)
+}
+
+# Computes eq. 9.13 considering page 310 (before Eq. 9.14)
+clayton.helper <- function () {
+  num_of_z <- 50
+  tau = 0.4
+  theta = -(2*tau)/(tau-1)
+  # Eq. 9.13
+  X <- rgamma(1,1/theta)
+  negative_log_V <- -log(runif(num_of_z))
+  U <- matrix(0,num_of_z)
+  for (i in 1:num_of_z) {U[i] <- psi(negative_log_V[i]/X, theta)}
+  return(U)
+}
+psi <- function(u, theta) {
+  return((u+1)^(-1/theta))
+}
+# Clayton Copula
+clayton <- function(num_simu) {
+  # Create a variable to store the res
+  num_of_z <- 50 # 50
+  res <- matrix(0,num_simu,num_of_z)
+  # Declare constants
+  std <- 0.01
+  d.f <- 3
+  for (i in 1:num_simu) {
+    # Fetch the samples 
+    x <- clayton.helper()
+    # Calculate the quantile w.r.t to normal dist.
+    res[i,] <- std*qt(x,d.f)
+  }
+  return(res)
+}
+```
+The construction of log returns as given in page 308
+```{r}
+logreturn_func <- function(samples, simu){
+  logreturn <- matrix(0,simu)
+  V_0 <- 50*2*10^4
+  for (i in 1:simu) {
+    sample <- samples[i,]
+    V_1 <- 2*10^4 * sum(exp(sample))
+    logreturn[i] <- log(V_1/V_0)
+  }
+  return(logreturn)
+}
+```
+The values of $Z_1, ..., Z_{50}$ given that they have a Gaussian copula.
+```{r}
+num_simu <- 100
+z_c.g<- gaussian(num_simu)
+logreturns_z_c.g <- logreturn_func(z_c.g, num_simu)
+```
+The empirical distribution function is given by $F_n(\vec{x}) = \frac{1}{n} \sum_{n=1}^n I(\vec{x}_k \leq \vec{x}).$ 
+```{r}
+emp_dist_func <- function(x, samples) {
+  return (sum(samples < x) / length(samples)) 
+}
+emp_dist_plot <- function(samples) {
+  samples <- sort(samples)
+  len <- length(samples)
+  interval <- samples[length(samples)] - samples[1]
+  h <- len * length(sample)
+  delta <- interval/h
+  x <- matrix(0,h); y <- matrix(0,h)
+  for (i in 1:h) {x[i] <- samples[1] + i * delta}
+  for (i in 1:length(x)) {
+    y[i] <- emp_dist_func(x[i],samples)
+    }
+  res <- matrix(0,2, length(x))
+  rownames(res) <- c("x", "y")
+  res[1,] <- x; res[2,] <- y;
+  return(res)
+}
+```
+
+The empirical distribution of $Z_1, ..., Z_{50}$ given that they have a Gaussian copula compare to the original values of $Z_1, ..., Z_{50}$
+```{r, out.width='1\\linewidth', fig.asp=0.3, fig.ncol = 1, fig.cap="output",fig.align = "center"}
+num_simu <- 500
+# Gaussian Copula
+z_c.g<- gaussian(num_simu)
+# Student's t Copula
+z_c.t <- t(num_simu)
+# Clayton Copula
+z_c.c <- clayton(num_simu)
+logreturns_z_c.g <- logreturn_func(z_c.g, num_simu)
+logreturns_z_c.t <- logreturn_func(z_c.t, num_simu)
+logreturns_z_c.c <- logreturn_func(z_c.c, num_simu)
+
+emp_dist_z_c.g <- emp_dist_plot(logreturns_z_c.g)
+emp_dist_z_c.t <- emp_dist_plot(logreturns_z_c.t)
+emp_dist_z_c.c <- emp_dist_plot(logreturns_z_c.c)
+par(mfrow=c(1,3))
+plot(emp_dist_z_c.g[1,], emp_dist_z_c.g[2,], cex = 0.3, col="black",
+     ylab = "Empirical Distribution", xlab= "x", 
+     main = "Gaussian Copula", panel.first = grid())
+plot(emp_dist_z_c.t[1,], emp_dist_z_c.t[2,], cex = 0.3, col="black",
+     ylab = "Empirical Distribution", xlab= "x", 
+     main = "Student's t Copula", panel.first = grid())
+plot(emp_dist_z_c.c[1,], emp_dist_z_c.c[2,], cex = 0.3, col="black",
+     ylab = "Empirical Distribution", xlab= "x", 
+     main = "Clayton Copula", panel.first = grid())
+```
+The empirical quantile distribution function is given by $F^{-1}_n(p) = x_[n(1-p)+1,n].$ 
+```{r}
+emp_quantile_func <- function(p, samples) {
+  samples <- sort(samples, decreasing = TRUE)
+  index <- floor(length(samples) *(1 - p)) + 1
+  return (samples[index]) 
+}
+qq_plot <- function(samples, df = 3) {
+  n <- length(samples)
+  t_quan <- emp_quan <- matrix(0,n)
+  for (k in 1:n) {
+    index <- (n-k+1)/(n+1)
+    t_quan[k]<- qt(index, df)
+    emp_quan[k] <- emp_quantile_func(index, samples)
+  }
+  res <- matrix(0,2,length(t_quan))
+  rownames(res) <- c("Reference", "Empirical")
+  res[1,] <- t_quan; res[2,] <- emp_quan;
+  return(res)
+}
+
+```
+
+The empirical quantile function of $Z_1, ..., Z_{50}$ given that they have a Gaussian copula compared to the original values of $Z_1, ..., Z_{50}$.
+```{r, out.width='1\\linewidth', fig.asp=0.3, fig.ncol = 1, fig.cap="output",fig.align = "center"}
+num_simu <- 500
+# Gaussian Copula
+z_c.g<- gaussian(num_simu)
+# Student's t Copula
+z_c.t <- t(num_simu)
+# Clayton Copula
+z_c.c <- clayton(num_simu)
+logreturns_z_c.g <- logreturn_func(z_c.g, num_simu)
+logreturns_z_c.t <- logreturn_func(z_c.t, num_simu)
+logreturns_z_c.c <- logreturn_func(z_c.c, num_simu)
+qq_z_c.g <- qq_plot(logreturns_z_c.g, 3)
+qq_z_c.t <- qq_plot(logreturns_z_c.t, 3)
+qq_z_c.c <- qq_plot(logreturns_z_c.c, 3)
+par(mfrow=c(1,3))
+plot(qq_z_c.g[1,], qq_z_c.g[2,], cex = 0.3, col="black",
+     ylab = "Empirical Quantile Distribution", xlab= "Student's t distribution", 
+     main = "Gaussian Copula", panel.first = grid())
+plot(qq_z_c.t[1,], qq_z_c.t[2,], cex = 0.3, col="black",
+     ylab = "Empirical Quantile Distribution", xlab= "Student's t distribution", 
+     main = "Student's t Copula", panel.first = grid())
+plot(qq_z_c.c[1,], qq_z_c.c[2,], cex = 0.3, col="black",
+     ylab = "Empirical Quantile Distribution", xlab= "Student's t distribution", 
+     main = "Clayton Copula", panel.first = grid())
+
+```
+
+```{r}
+V_1_func <- function(sample, sim) {
+  # Store V_1 for each simulation
+  V_1<- 2*10^4 * sum(exp(sample))
+  return(V_1)
+}
+V_0_func <- function() {
+  return(50*2*10^4)
+}
+var_func <- function(payoff) {
+  R_0 <- 1
+  L <- -1*payoff/R_0
+  L <- sort(L, decreasing = TRUE)
+  p <- 0.01
+  index <- floor(length(L) * p) + 1
+  return(L[index])
+}
+es_func <- function(payoff){
+  R_0 <- 1
+  L <- -1*payoff/R_0
+  L <- sort(L, decreasing = TRUE)
+  n <- length(L)
+  p <- 0.01
+  if (floor(n * p) == 0) stop("floor(n * p) == 0 is True ")
+  index <- floor(n * p)
+  es <- matrix(0,index)
+  for (k in 1:index) {
+    es[k] = (1/p)*(L[k]/n + ( p - index/n)*L[index + 1])
+  }
+  return(sum(es))
+}
+var_and_es_func <- function(samples, sim) {
+  # Calculate the net payoff
+  payoff <- matrix(0, sim)
+  for (i in 1:sim) {
+    sample <- samples[i,]
+    payoff[i] <- V_1_func(sample) - V_0_func()
+  }
+  # Calculate VaR and ES
+  var <- var_func(payoff)
+  es <- es_func(payoff)
+  res <- c(var, es)
+  return(res)
+}
+```
+Gaussian simulation
+```{r, out.width='1\\linewidth', fig.asp=0.3, fig.ncol = 1, fig.cap="output",fig.align = "center"}
+sim_arr <- seq(10^2,10^4,10^2) 
+len_sim_arr <- length(sim_arr)
+var <- matrix(0,len_sim_arr); es <- matrix(0,len_sim_arr);
+table <- matrix(0,len_sim_arr,3); colnames(table) <- c("sim", "VaR", "ES")
+for (i in 1:length(sim_arr)) {
+  sample <- gaussian(sim_arr[i])
+  res <- var_and_es_func(sample, sim_arr[i])
+  var[i] <- res[1]
+  es[i] <- res[2]
+  table[i,1] <- sim_arr[i]; table[i,2] <- res[1]; table[i,3] <- res[2]
+}
+#print(table)
+
+par(mfrow=c(1,2))
+plot(var, cex = 0.3, col="black",
+     ylab = "Value-at-Risk", xlab= "x", 
+     main = "Gaussian Copula & Value-at-Risk", panel.first = grid())
+plot(es, cex = 0.3, col="black",
+     ylab = "Expected Shortfall", xlab= "x", 
+     main = "Gaussian Copula & Expected Shortfall", panel.first = grid())
+```
+Student's simulation
+```{r, out.width='1\\linewidth', fig.asp=0.3, fig.ncol = 1, fig.cap="output",fig.align = "center"}
+sim_arr <- seq(10^2,10^4,10^2) 
+len_sim_arr <- length(sim_arr)
+var <- matrix(0,len_sim_arr); es <- matrix(0,len_sim_arr);
+table <- matrix(0,len_sim_arr,3); colnames(table) <- c("sim", "VaR", "ES")
+for (i in 1:length(sim_arr)) {
+  sample <- t(sim_arr[i])
+  res <- var_and_es_func(sample, sim_arr[i])
+  var[i] <- res[1]
+  es[i] <- res[2]
+  table[i,1] <- sim_arr[i]; table[i,2] <- res[1]; table[i,3] <- res[2]
+}
+#print(table)
+
+par(mfrow=c(1,2))
+plot(var, cex = 0.3, col="black",
+     ylab = "Value-at-Risk", xlab= "x", 
+     main = "t Copula & Value-at-Risk", panel.first = grid())
+plot(es, cex = 0.3, col="black",
+     ylab = "Expected Shortfall", xlab= "x", 
+     main = "t Copula & Expected Shortfall", panel.first = grid())
+```
+Clayton
+```{r, out.width='1\\linewidth', fig.asp=0.3, fig.ncol = 1, fig.cap="output",fig.align = "center"}
+sim_arr <- seq(10^2,10^4,10^2) 
+len_sim_arr <- length(sim_arr)
+var <- matrix(0,len_sim_arr); es <- matrix(0,len_sim_arr);
+table <- matrix(0,len_sim_arr,3); colnames(table) <- c("sim", "VaR", "ES")
+for (i in 1:length(sim_arr)) {
+  sample <- clayton(sim_arr[i])
+  res <- var_and_es_func(sample, sim_arr[i])
+  var[i] <- res[1]
+  es[i] <- res[2]
+  table[i,1] <- sim_arr[i]; table[i,2] <- res[1]; table[i,3] <- res[2]
+}
+
+par(mfrow=c(1,2))
+plot(var, cex = 0.3, col="black",
+     ylab = "Value-at-Risk", xlab= "x", 
+     main = "Clayton Copula & Value-at-Risk", panel.first = grid())
+plot(es, cex = 0.3, col="black",
+     ylab = "Expected Shortfall", xlab= "x", 
+     main = "Clayton Copula & Expected Shortfall", panel.first = grid())
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+
