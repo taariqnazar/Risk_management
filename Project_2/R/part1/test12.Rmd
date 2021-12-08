@@ -1,0 +1,229 @@
+---
+title: "samplr."
+output: html_notebook
+---
+Calculating the value of the liability corresponds to
+```{r}
+liability <- function(delta=0) {
+  # Read in zero_rates
+  zero_rates <- read.csv("zero_rates.csv")
+  # Convert to vector
+  zero_rates <- zero_rates$x 
+  discount_factors <- matrix(0,length(zero_rates))
+  for (i in 1:length(zero_rates)){discount_factors[i] <- exp(-(zero_rates[i]+delta)*i)}
+  liability <- 100 * sum(discount_factors)
+  return(liability)
+}
+```
+Calculating the value of the bond portfolio is similiar
+```{r}
+bond_portfolio <- function(Y_2=0) {
+  # Read in zero_rates
+  zero_rates <- read.csv("zero_rates.csv"); zero_rates <- zero_rates$x;
+  # Read in bond_payments
+  bond_payments <- read.csv("bond_payments.csv"); bond_payments <- bond_payments$x 
+  temp <- matrix(0,length(zero_rates))
+  for (i in 1:length(zero_rates)) {
+    temp[i] <- bond_payments[i]*exp(-(zero_rates[i]+Y_2)*i)
+    }
+  bond_portfolio <- sum(temp)
+  return(bond_portfolio)
+}
+```
+
+```{r cars}
+sampling <- function() {
+  mu_1 <- 0.08; sigma_1 <- 0.2; sigma_2 <- 0.01; rho <- 0.1;
+  res <- matrix(0,4)
+  Z_1 <- rnorm(1); Z_2 <- rnorm(1);
+  Y_1 <- mu_1 + sigma_1 * Z_1
+  Y_2 <- sigma_2 * (rho * Z_2 + sqrt(1-rho^2)*Z_2)
+  res[1] <- Y_1; res[2] <- Y_2;
+  res[3] <- Z_1; res[4] <- Z_2;
+  return(res)
+}
+```
+
+```{r, echo=FALSE, fig.width = 12, fig.height= 4, fig.align = "center", out.width='1\\linewidth'}
+
+simulation <- function(num_simu) {
+  # Store
+  res <- matrix(0, num_simu, 5) # Z_1, Z_2, Y_1, Y_2 & V_1
+  # Simulation
+  i = 1
+  while(i <= num_simu) {
+    sample <- sampling(); Y_1 <- sample[1]; Y_2 <- sample[2];
+    Z_1 <- sample[3]; Z_2 <- sample[4];
+    if (sqrt(Z_1^2+Z_2^2) >= 2.99 & sqrt(Z_1^2+Z_2^2) <= 3.001)  {
+      tot_invest <- 1.3 * liability(Y_2)
+      bond_invest <- 0.7 * tot_invest * bond_portfolio(Y_2)
+      stock_invest <- 0.3 * tot_invest * exp(Y_2)
+      res[i,5] <- bond_invest + stock_invest
+      res[i,1] <- Z_1; res[i,2] <- Z_2;
+      res[i,3] <- Y_1; res[i,4] <- Y_2;
+      colnames(res) <- c("Z_1", "Z_2", "Y_1", "Y_2", "V_1")
+      i = i + 1
+    }
+  }
+  return(res)
+  
+}
+# Testing
+num_simu <- 1000
+res <- simulation(num_simu)
+
+Z_1 <- res[,1]; Z_2 <- res[,2];
+Y_1 <- res[,3]; Y_2 <- res[,4]; V_1 <- res[,5]
+# Plot
+library(ggplot2)
+
+par(mfrow=c(1,3))
+plot(Z_1, Z_2, cex = 0.3, col="black",
+     ylab = "Z_2", xlab= "Z_1", 
+     main = "Standard Normal Distribution on the radius = 3")
+abline(h = 0, v = 0)
+plot(Y_1, Y_2, cex = 0.3, col="black",
+     ylab = "Y_2", xlab= "Y_1", 
+     main = "Transformation of Z_1 & Z_2, Y_1 & Y_2")
+abline(h = 0, v = 0)
+plot(V_1, cex = 0.3, col="black",
+     ylab = "Value" , xlab= "sample", 
+     main = "The net payoff")
+
+```
+```{r}
+res[1:10,]
+```
+
+Polar coordinates, small highlight
+```{r}
+polar <- function(x,y) {
+  r <- phi <- matrix(0,length(x))
+  for (i in 1:length(x)) {
+    r[i] <- sqrt(x[i]^2 + y[i]^2)
+    if(atan2(y[i],x[i]) < 0){
+      phi[i] <- atan2(y[i],x[i]) + 2*pi
+    }
+    else {
+      phi[i] <- atan2(y[i],x[i])
+    }
+  }
+  res <- matrix(0,length(x), 2)
+  colnames(res) <- c("r", "phi")
+  res[,1] <- r
+  res[,2] <- phi
+  return(res)
+}
+test <- simulation(10)
+test_Z_1 <- test[,1]
+test_Z_2 <- test[,2]
+r_phi_test <- polar(test_Z_1,test_Z_2)
+r_phi_test
+```
+Sort the values
+```{r}
+r_phi_test.sorted=r_phi_test[order(r_phi_test[,2]), ] # sort w.r.t second column, i.e., phi
+r_phi_test.sorted
+```
+Append r and phi to the result, then sort the values w.r.t to phi
+```{r}
+r_phi <- polar(Z_1, Z_2)
+res <- cbind(res, r_phi)
+res.sorted=res[order(res[,7]), ]
+res.sorted
+```
+Divide it to four parts, 0 < x < pi/2, pi/2 < x < pi, pi < x < 3pi/2 and 3pi/2 < x < 2pi
+```{r}
+phi <- res.sorted[,7]
+index_1 <- length(phi[phi < pi/2])
+index_2 <- length(phi[phi < pi])
+index_3 <- length(phi[phi < 3*pi/2])
+index_4 <- length(phi[phi < 2*pi])
+
+```
+
+```{r}
+res.sorted[1:4, 1]
+```
+
+Plot all the intervals
+```{r, echo=FALSE, fig.width = 8, fig.height= 14, fig.align = "center", out.width='1\\linewidth'}
+Z_1 <- res[,1]; Z_2 <- res[,2];
+Y_1 <- res[,3]; Y_2 <- res[,4]; V_1 <- res[,5]
+# Plot
+library(ggplot2)
+
+par(mfrow=c(4,2))
+# Interval 1
+plot(x = res.sorted[1:index_1, 1],res.sorted[1:index_1, 2], bg=ifelse( res.sorted[1:index_1, 1] == res.sorted[1, 1], "red", "black"),
+     cex=ifelse(res.sorted[1:index_1, 1] == res.sorted[1, 1], 2.5, 0.5), pch=21,
+     ylab = "Z_2", xlab= "Z_1", 
+     main = "Standard Normal Distribution on the radius = 3")
+
+plot(res.sorted[1:index_1,5], bg=ifelse( res.sorted[1:index_1,5] == res.sorted[1,5], "red", "black"),
+     cex=ifelse(res.sorted[1:index_1,5] == res.sorted[1,5], 2.5, 0.5), pch=21,
+     ylab = "Value" , xlab= "sample", 
+     main = "The net payoff")
+
+# Interval 2
+plot(res.sorted[index_1:index_2, 1], res.sorted[index_1:index_2, 2],bg=ifelse( res.sorted[index_1:index_2, 1] == res.sorted[index_1, 1], "red", "black"),
+     cex=ifelse(res.sorted[index_1:index_2, 1] == res.sorted[index_1, 1], 2.5, 0.5), pch=21,
+     ylab = "Z_2", xlab= "Z_1", 
+     main = "Standard Normal Distribution on the radius = 3")
+
+plot(res.sorted[index_1:index_2,5], bg=ifelse( res.sorted[index_1:index_2,5] == res.sorted[index_1,5], "red", "black"),
+     cex=ifelse(res.sorted[index_1:index_2,5] == res.sorted[index_1,5], 2.5, 0.5), pch=21,
+     ylab = "Value" , xlab= "sample", 
+     main = "The net payoff")
+
+# Interval 3
+plot(res.sorted[index_2:index_3, 1], res.sorted[index_2:index_3, 2], bg=ifelse( res.sorted[index_2:index_3, 1] == res.sorted[index_2, 1], "red", "black"),
+     cex=ifelse(res.sorted[index_2:index_3, 1] == res.sorted[index_2, 1], 2.5, 0.5), pch=21,
+     ylab = "Z_2", xlab= "Z_1", 
+     main = "Standard Normal Distribution on the radius = 3")
+
+plot(res.sorted[index_2:index_3,5], bg=ifelse( res.sorted[index_2:index_3,5] == res.sorted[index_2,5], "red", "black"),
+     cex=ifelse(res.sorted[index_2:index_3,5] == res.sorted[index_2,5], 2.5, 0.5), pch=21,
+     ylab = "Value" , xlab= "sample", 
+     main = "The net payoff")
+
+# Interval 4
+plot(res.sorted[index_3:index_4, 1], res.sorted[index_3:index_4, 2], bg=ifelse( res.sorted[index_3:index_4, 1] == res.sorted[index_3, 1], "red", "black"),
+     cex=ifelse(res.sorted[index_3:index_4, 1] == res.sorted[index_3, 1], 2.5, 0.5), pch=21,
+     ylab = "Z_2", xlab= "Z_1", 
+     main = "Standard Normal Distribution on the radius = 3")
+
+plot(res.sorted[index_3:index_4,5], bg=ifelse( res.sorted[index_3:index_4,5] == res.sorted[index_3,5], "red", "black"),
+     cex=ifelse(res.sorted[index_3:index_4,5] == res.sorted[index_3,5], 2.5, 0.5), pch=21,
+     ylab = "Value" , xlab= "sample", 
+     main = "The net payoff")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

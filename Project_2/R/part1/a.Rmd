@@ -44,7 +44,7 @@ bond_portfolio <- function(Y_2=0) {
   return(bond_portfolio)
 }
 ```
-Plot the value of the insurer’s portfolio, assets minus liabilities in one year from now
+Plot the value of the insurer’s portfolio, assets minus liabilities in one year from now without sqrt(Z_1^2+Z_2^2) = 3
 ```{r, out.width='1\\linewidth', fig.asp=0.3, fig.ncol = 1, fig.cap="output",fig.align = "center"}
 simulation <- function(num_simu) {
   # Store
