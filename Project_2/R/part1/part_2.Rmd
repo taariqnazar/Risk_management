@@ -1,0 +1,82 @@
+---
+title: "Untitled"
+output: html_notebook
+---
+Read in necessary data
+```{r}
+cash_flow <- c(27.2, 49.47, 67.7, 82.63, 67.65, 55.39, 45.35, 37.13, 30.4, 24.89, 20.38, 16.68, 13.66, 11.18, 9.16, 7.5, 6.14, 5.02, 4.11, 3.37,
+               20.38, 16.68, 13.66, 11.18, 9.16, 7.5, 6.14, 5.02, 4.11, 3.37, 20.38, 16.68, 13.66, 11.18, 9.16, 7.5, 6.14, 5.02, 4.11, 3.37)
+library("readxl")
+data <- read_excel("zero_rates_part_2.xlsx")
+bond_payment <-data$`Bond Pay`
+time <- data$Time
+time
+zero_rates <- data$yld
+zero_rates
+
+matrix <- cbind(bond_payment, time, zero_rates)
+matrix
+matrix[3,2]
+colnames(matrix) <- c("bond", "time", "zero_rates")
+
+```
+The payments of bonds and liability are different which we must consider
+```{r}
+time_liability <- seq(0.25, 7.5, 0.25)
+zero_rates_liability <- matrix(0,length(time_liability))
+time_liability[1] == matrix[3,2]
+for (i in 1:length(time_liability)){
+  print(time_liability[i])
+  print(matrix[i,2])
+  print(i)
+  print(time_liability[i] == matrix[i,2])
+  if (time_liability[i] == matrix[i,2]) {
+    zero_rates_liability[i]  <-  matrix[i,1]
+  }
+}
+zero_rates_liability
+```
+
+Add new values of mean and variance according to the assignment
+```{r}
+sampling <- function() {
+  mu_1 <- 0.04; mu_2 <- 0; sigma_1 <- 0.2; sigma_2 <- 0.01; rho <- -0.1;
+  res <- matrix(0,4)
+  Z_1 <- rnorm(1); Z_2 <- rnorm(1);
+  Y_1 <- mu_1 + sigma_1 * Z_1
+  Y_2 <- sigma_2 * (rho * Z_2 + sqrt(1-rho^2)*Z_2)
+  res[1] <- Y_1; res[2] <- Y_2;
+  res[3] <- Z_1; res[4] <- Z_2;
+  return(res)
+}
+```
+Calculating the value of the liability corresponds to
+```{r}
+liability <- function(delta=0) {
+  # Read in zero_rates
+  zero_rates <- read.csv("zero_rates.csv")
+  # Convert to vector
+  zero_rates <- zero_rates$x 
+  discount_factors <- matrix(0,length(zero_rates))
+  for (i in 1:length(zero_rates)){discount_factors[i] <- exp(-(zero_rates[i]+delta)*i)}
+  liability <- 100 * sum(discount_factors)
+  return(liability)
+}
+```
+Calculating the value of the bond portfolio is similiar
+```{r}
+bond_portfolio <- function(Y_2=0) {
+  # Read in zero_rates
+  zero_rates <- read.csv("zero_rates.csv"); zero_rates <- zero_rates$x;
+  # Read in bond_payments
+  bond_payments <- read.csv("bond_payments.csv"); bond_payments <- bond_payments$x 
+  temp <- matrix(0,length(zero_rates))
+  for (i in 1:length(zero_rates)) {
+    temp[i] <- bond_payments[i]*exp(-(zero_rates[i]+Y_2)*i)
+    }
+  bond_portfolio <- sum(temp)
+  return(bond_portfolio)
+}
+```
+```
+
